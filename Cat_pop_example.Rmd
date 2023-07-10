@@ -1,0 +1,138 @@
+---
+title: "Cat pop example"
+output: html_document
+date: "2023-06-27"
+---
+
+#1. Library
+```{r Library, echo = FALSE, results = "hide", message = FALSE, warning = FALSE}
+library(rerollR)
+library(stats)
+library(ggplot2)
+
+#Use library(rerollR) to load the package if you installed it
+#or use source() to load all the functions from rerollR, using the pathname of the functions file in your local system (if you downloaded the functions manually)
+```
+
+#Data set generation
+```{r data set generation}
+set.seed(42) #allow to generate the exact same data than in the user manual
+Pop1 = data.frame(x=1, "Body_length" = c(runif(30,min=60,max=70)), "ID" = trunc(seq(0,29)/3)) ; Pop1
+Pop2 = data.frame(x=2, "Body_length" = c(runif(30,min=60,max=85)), "ID" = trunc(seq(0,29)/3)) ; Pop2
+```
+
+#Data aggregation
+```{r Data aggregation}
+#Aggregate the data
+Pop1_agr<-aggregate(Pop1[,"Body_length"], by=list(Pop1[,"ID"]), FUN=mean, na.rm=T)
+colnames(Pop1_agr) <- c("ID", "mean")
+Pop1_agr$x<-seq(0.5,1.4, by=0.1)
+Pop1_agr$sd<-aggregate(Pop1[,"Body_length"], by=list(Pop1[,"ID"]), FUN=sd)[,2]
+Pop1_agr$n<-aggregate(Pop1[,"Body_length"], by=list(Pop1[,"ID"]), FUN=length)[,2]
+Pop1_agr
+
+Pop2_agr<-aggregate(Pop2[,"Body_length"], by=list(Pop2[,"ID"]), FUN=mean, na.rm=T)
+colnames(Pop2_agr) <- c("ID", "mean")
+Pop2_agr$x<-seq(1.5,2.4, by=0.1)
+Pop2_agr$sd<-aggregate(Pop2[,"Body_length"], by=list(Pop2[,"ID"]), FUN=sd)[,2]
+Pop2_agr$n<-aggregate(Pop2[,"Body_length"], by=list(Pop2[,"ID"]), FUN=length)[,2]
+Pop2_agr
+```
+
+#General plots
+```{r General plots}
+
+#plot with 2SD error bars 
+plot1=ggplot()+
+  geom_pointrange(data=Pop1_agr,aes(y = mean, x=x, ymin=mean-2*sd, ymax=mean+2*sd),size = 0.8, colour="red")+
+  geom_pointrange(data=Pop2_agr, aes(y = mean, x=x, ymin=mean-2*sd, ymax=mean+2*sd),size = 0.8, colour="springgreen", shape=15)+
+  scale_x_continuous(limits=c(0, 3))+
+  theme_bw()+
+  theme(text=element_text(size=20))+
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank())+
+  labs(y= "Body_length")
+plot1
+
+#plot without error bars 
+plot2=ggplot()+
+  geom_point(data=Pop1_agr,aes(y = mean, x=x),size = 3, colour="red")+
+  geom_point(data=Pop2_agr, aes(y = mean, x=x),size = 3, shape=15, colour="springgreen")+
+  scale_x_continuous(limits=c(0, 3))+
+  theme_bw()+
+  theme(text=element_text(size=20))+
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank())+
+  scale_y_continuous(limits= layer_scales(plot1)$y$get_limits())+
+  labs(y= "Body_length")
+plot2
+```
+
+#Simple tests
+```{r Simple tests}
+#t-test
+t.test(Pop1_agr$mean ,Pop2_agr$mean)
+
+#Wilcoxon rank sum test
+wilcox.test(Pop1_agr$mean ,Pop2_agr$mean)
+
+#Randomization test
+Pop_mrgd<-rbind(Pop1_agr,Pop2_agr) #merged pop1 and pop2 data together
+n=5000 #number of randomly assigned pop
+k=1
+set.seed(42) #allow to generate constant results
+
+repeat{
+  #random assignation as P1 or P2 pop
+  Pop_mrgd[,"assignment"]<- NA
+  random_liste <- sample(x=1:nrow(Pop_mrgd), size=nrow(Pop1_agr),  replace = FALSE)
+  Pop_mrgd[random_liste,"assignment"] <-"P1"
+  Pop_mrgd[-random_liste,"assignment"]<-"P2"
+  
+#Store P1 successive assignment
+  if(k==1){assignedP1 <- data.frame(last=1:length(Pop_mrgd[Pop_mrgd$assignment == "P1", "mean"]))} #create an initial df for P1 assign with   the right row number
+  assignedP1[,"last"]<- NA
+  assignedP1[,"last"]<- data.frame(last=Pop_mrgd[Pop_mrgd$assignment == "P1", "mean"])
+  names(assignedP1)[ncol(assignedP1)] <- k
+  
+#Store P2 successive assignment
+  if(k==1){assignedP2 <- data.frame(last=1:length(Pop_mrgd[Pop_mrgd$assignment == "P2", "mean"]))} #create an initial df for P2 assign with   the right row number
+  assignedP2[,"last"]<- NA
+  assignedP2[,"last"]<- data.frame(last=Pop_mrgd[Pop_mrgd$assignment == "P2", "mean"])
+  names(assignedP2)[ncol(assignedP2)] <- k
+  
+  k=k+1
+  if(n<k){break}
+}
+
+#Comparison of the difference between means
+difmean <- data.frame("difmean.res" =abs(colMeans(assignedP1[,1:ncol(assignedP1)])-colMeans(assignedP2[,1:ncol(assignedP2)])))
+print(paste("Randomization test results (i.e. fraction of cases when the absolute difference between Pop1 and Pop2 has been equal or smaller than with randomly assigned individuals): ", length(which(abs(mean(Pop1_agr$mean)-mean(Pop2_agr$mean)) <= abs(difmean$difmean.res)))/nrow(difmean)))
+print("0 mean that randomly assigned individuals (to Pop1 and Pop2) never generated a greater difference between the means of the population than with original Pop1 and Pop2 assignments. Which make sense considering that the individual mean values of Pop2 are all superior to Pop1 ones.")
+```
+
+#re_
+```{r re_}
+set.seed(42)
+re_Pop1 = re_gauss(popm=Pop1_agr$mean, popu =Pop1_agr$sd, u = "SD", n=10000)
+re_Pop2 = re_gauss(popm=Pop2_agr$mean, popu =Pop2_agr$sd, u = "SD", n=10000)
+```
+
+#roll_
+```{r roll_}
+#roll_ttest example from user manual
+cat_res = roll_ttest(p1 = re_Pop1, p2=  re_Pop2, density=T, histogram = F)
+cat_res$pvalues
+cat_res$stats
+cat_res$plot + labs(title= "Student's t tests re_Pop1 - re_Pop2") + scale_x_continuous(limits=c(-0.1,1))
+
+roll_ttest(p1 = re_Pop1, p2=  re_Pop2, density=T, histogram = F, alternative="less")$stats
+
+#additional roll_ examples
+roll_ttest(re_Pop1, re_Pop2)
+roll_ttest(re_Pop1, re_Pop2, density=T, histogram = F, fill.color = c("#000000", "red", "blue", "yellow"))
+roll_ttest(re_Pop1, re_Pop2, density=F, histogram = T)
+
+roll_wtest(re_Pop1, re_Pop2, histogram = F)
+roll_wtest(re_Pop1, re_Pop2, histogram = F, fill.color = c("black", "red", "blue", "yellow"))
+
+roll_rtest(re_Pop1, re_Pop2, nr=50, metric = "mean", histogram = F) #Note: nr to small for good randomization reliability
+```
